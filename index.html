@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Medinexa – Android Patient Tracker</title>
+<meta name="description" content="Medinexa brings medications, appointments, symptoms and health records into one secure place for patients, doctors and care teams.">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class',theme:{extend:{colors:{brand:{50:'#cffafe',100:'#a5f3fc',500:'#06b6d4',600:'#0891b2',700:'#0e7490'}},fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{background:#f0fdff;font-family:Inter,system-ui,sans-serif}
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@media print{
+  @page{margin:12mm}
+  body{background:#fff!important}
+  nav.fixed{display:none!important}
+  aside{position:static!important;height:auto!important}
+  section,[class*="rounded-2xl"]{break-inside:avoid;page-break-inside:avoid}
+  *{box-shadow:none!important}
+}
+</style>
+</head>
+<body class="text-slate-900">
+<div id="root"></div>
+<script type="text/plain" id="src">
+const { useState } = React;
+
+type Tab = 'dashboard' | 'meds' | 'appts' | 'symptoms' | 'records';
+interface Med { id: number; name: string; dose: string; time: string; taken: boolean }
+interface Appt { id: number; doctor: string; spec: string; date: string; time: string; place: string }
+interface Sym { id: number; name: string; severity: number; date: string; note: string }
+interface Rec { id: number; title: string; type: string; date: string }
+
+const P: Record<string, string> = {
+  home: 'M3 10.5 12 3l9 7.5V21H3z',
+  pill: 'M10.5 20.5a5 5 0 0 1-7-7l10-10a5 5 0 0 1 7 7zM8.5 8.5l7 7',
+  cal: 'M8 2v4M16 2v4M3 8h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2z',
+  pulse: 'M3 12h4l3-8 4 16 3-8h4',
+  file: 'M14 3H6v18h12V7zM14 3v4h4M9 13h6M9 17h6',
+  plus: 'M12 5v14M5 12h14',
+  check: 'M5 12l5 5L20 7',
+  pin: 'M12 21s7-6.2 7-11a7 7 0 0 0-14 0c0 4.8 7 11 7 11zM12 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4z',
+  shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z',
+  heart: 'M12 21s-8-5.3-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.7-8 11-8 11z',
+  mail: 'M3 5h18v14H3zM3 7l9 6 9-6',
+  lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
+  out: 'M9 21H4V3h5M16 17l5-5-5-5M21 12H9',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13',
+};
+const Icon = ({ n, c = 'w-5 h-5' }: { n: string; c?: string }) => (
+  <svg className={c} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={P[n]} /></svg>
+);
+
+const card = 'bg-white rounded-2xl border-2 border-cyan-300';
+const btn = 'inline-flex items-center gap-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold px-4 py-2.5 transition';
+const input = 'w-full rounded-xl border-2 border-slate-400 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
+
+const NAV: { id: Tab; label: string; icon: string }[] = [
+  { id: 'dashboard', label: 'Overview', icon: 'home' },
+  { id: 'meds', label: 'Medications', icon: 'pill' },
+  { id: 'appts', label: 'Appointments', icon: 'cal' },
+  { id: 'symptoms', label: 'Symptoms', icon: 'pulse' },
+  { id: 'records', label: 'Records', icon: 'file' },
+];
+
+const Header = ({ title, sub, action }: { title: string; sub?: string; action?: React.ReactNode }) => (
+  <div className="flex items-start justify-between gap-3 mb-5">
+    <div><h1 className="text-2xl font-bold tracking-tight">{title}</h1>{sub && <p className="text-sm text-slate-700 dark:text-slate-400 mt-1">{sub}</p>}</div>
+    {action}
+  </div>
+);
+
+function App({ name, onLogout }: { name: string; onLogout: () => void }) {
+  const [tab, setTab] = useState<Tab>('dashboard');
+  const [meds, setMeds] = useState<Med[]>([
+    { id: 1, name: 'Metformin', dose: '500 mg', time: '08:00', taken: true },
+    { id: 2, name: 'Lisinopril', dose: '10 mg', time: '09:00', taken: false },
+    { id: 3, name: 'Vitamin D3', dose: '1000 IU', time: '13:00', taken: false },
+    { id: 4, name: 'Atorvastatin', dose: '20 mg', time: '21:00', taken: false },
+  ]);
+  const [appts, setAppts] = useState<Appt[]>([
+    { id: 1, doctor: 'Dr. Ananya Rao', spec: 'Endocrinologist', date: '2026-10-03', time: '10:30', place: 'CityCare Clinic, Pune' },
+    { id: 2, doctor: 'Dr. Vikram Shah', spec: 'Cardiologist', date: '2026-10-19', time: '16:00', place: 'Sahyadri Hospital' },
+  ]);
+  const [syms, setSyms] = useState<Sym[]>([
+    { id: 1, name: 'Headache', severity: 4, date: '2026-09-26', note: 'After screen time' },
+    { id: 2, name: 'Fatigue', severity: 3, date: '2026-09-24', note: 'Mid-afternoon' },
+  ]);
+  const [recs] = useState<Rec[]>([
+    { id: 1, title: 'HbA1c Lab Report', type: 'Lab', date: '2026-09-12' },
+    { id: 2, title: 'Chest X-ray', type: 'Imaging', date: '2026-08-02' },
+    { id: 3, title: 'Prescription – Endocrinology', type: 'Prescription', date: '2026-07-21' },
+  ]);
+  const [form, setForm] = useState({ name: '', severity: 3, note: '' });
+  const [medForm, setMedForm] = useState({ name: '', dose: '', time: '08:00' });
+
+  const taken = meds.filter(m => m.taken).length;
+  const pct = Math.round((taken / meds.length) * 100) || 0;
+  const next = [...appts].sort((a, b) => a.date.localeCompare(b.date))[0];
+  const fmt = (d: string) => new Date(d + 'T00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const toggle = (id: number) => setMeds(meds.map(m => (m.id === id ? { ...m, taken: !m.taken } : m)));
+
+  const addSym = () => {
+    if (!form.name.trim()) return;
+    setSyms([{ id: Date.now(), name: form.name, severity: form.severity, note: form.note, date: '2026-09-28' }, ...syms]);
+    setForm({ name: '', severity: 3, note: '' });
+  };
+  const addMed = () => {
+    if (!medForm.name.trim()) return;
+    setMeds([...meds, { id: Date.now(), ...medForm, taken: false }]);
+    setMedForm({ name: '', dose: '', time: '08:00' });
+  };
+
+  const MedRow = ({ m }: { m: Med }) => (
+    <li className="flex items-center gap-3 py-3">
+      <button aria-label="Mark taken" onClick={() => toggle(m.id)} className={'w-9 h-9 rounded-full grid place-items-center border-2 transition ' + (m.taken ? 'bg-brand-500 border-brand-500 text-white' : 'border-slate-400 text-transparent')}><Icon n="check" c="w-4 h-4" /></button>
+      <div className="flex-1 min-w-0"><p className={'font-semibold truncate ' + (m.taken ? 'line-through text-slate-600' : '')}>{m.name}</p><p className="text-xs text-slate-700">{m.dose}</p></div>
+      <span className="text-sm text-slate-700 tabular-nums">{m.time}</span>
+    </li>
+  );
+
+  const sev = (n: number) => (n >= 4 ? 'bg-rose-600 text-white' : n === 3 ? 'bg-amber-400 text-slate-900' : 'bg-emerald-600 text-white');
+
+  return (
+    <div className="min-h-screen lg:flex">
+      <aside className="hidden lg:flex w-64 shrink-0 flex-col bg-white dark:bg-slate-900 border-r-2 border-cyan-300 dark:border-slate-800 p-5 sticky top-0 h-screen">
+        <div className="flex items-center gap-2 mb-8"><div className="w-9 h-9 rounded-xl bg-brand-600 text-white grid place-items-center"><Icon n="heart" /></div><span className="text-lg font-bold">Medinexa</span></div>
+        <nav className="space-y-1">
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => setTab(n.id)} className={'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ' + (tab === n.id ? 'bg-brand-50 text-brand-700 dark:bg-brand-700/20 dark:text-brand-100' : 'text-slate-800 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800')}><Icon n={n.icon} />{n.label}</button>
+          ))}
+        </nav>
+        <button onClick={onLogout} className="mt-auto mb-3 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-800 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><Icon n="out" />Sign out</button>
+        <div className="rounded-2xl bg-brand-50 dark:bg-brand-700/20 p-4 text-sm"><Icon n="shield" c="w-5 h-5 text-brand-600 mb-2" /><p className="font-semibold">Private by design</p><p className="text-slate-800 dark:text-slate-400 text-xs mt-1">Your health data stays on your device in the Android app.</p></div>
+      </aside>
+
+      <main className="flex-1 min-w-0 px-4 sm:px-8 py-6 pb-28 lg:pb-10 max-w-5xl mx-auto w-full">
+        <div className="lg:hidden flex items-center gap-2 mb-5"><div className="w-8 h-8 rounded-lg bg-brand-600 text-white grid place-items-center"><Icon n="heart" c="w-4 h-4" /></div><span className="font-bold flex-1">Medinexa</span><button aria-label="Sign out" onClick={onLogout} className="text-slate-700"><Icon n="out" /></button></div>
+
+        {tab === 'dashboard' && (<>
+          <Header title={"Good morning, " + name} sub="Monday, 28 September · Here's your health today" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            {[['Adherence', pct + '%', 'pill'], ['Doses left', String(meds.length - taken), 'check'], ['Appointments', String(appts.length), 'cal'], ['Symptoms logged', String(syms.length), 'pulse']].map(([l, v, i]) => (
+              <div key={l} className={card + ' p-4'}><div className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-brand-700/20 text-brand-600 grid place-items-center mb-3"><Icon n={i} c="w-4 h-4" /></div><p className="text-2xl font-bold">{v}</p><p className="text-xs text-slate-700">{l}</p></div>
+            ))}
+          </div>
+          <div className="grid lg:grid-cols-5 gap-4">
+            <section className={card + ' p-5 lg:col-span-3'}>
+              <div className="flex justify-between items-center mb-2"><h2 className="font-semibold">Today's medications</h2><span className="text-xs text-slate-700">{taken}/{meds.length} taken</span></div>
+              <div className="h-2 rounded-full bg-cyan-100 mb-2"><div className="h-2 rounded-full bg-brand-500 transition-all" style={{ width: pct + '%' }} /></div>
+              <ul className="divide-y divide-cyan-200 dark:divide-slate-800">{meds.map(m => <MedRow key={m.id} m={m} />)}</ul>
+            </section>
+            <section className="lg:col-span-2 space-y-4">
+              {next && <div className="rounded-2xl bg-gradient-to-br from-brand-600 to-indigo-600 text-white p-5"><p className="text-xs uppercase tracking-wide opacity-100">Next appointment</p><p className="text-xl font-bold mt-1">{next.doctor}</p><p className="text-sm opacity-100">{next.spec}</p><p className="mt-3 text-sm">{fmt(next.date)} · {next.time}</p><p className="text-xs opacity-100 flex items-center gap-1 mt-1"><Icon n="pin" c="w-3.5 h-3.5" />{next.place}</p></div>}
+              <div className={card + ' p-5'}><h2 className="font-semibold mb-3">Recent symptoms</h2>{syms.slice(0, 3).map(s => <div key={s.id} className="flex items-center justify-between py-1.5 text-sm"><span>{s.name}</span><span className={'text-xs font-semibold px-2 py-0.5 rounded-full ' + sev(s.severity)}>{s.severity}/5</span></div>)}</div>
+            </section>
+          </div>
+        </>)}
+
+        {tab === 'meds' && (<>
+          <Header title="Medications" sub="Track doses and stay on schedule" />
+          <div className={card + ' p-5 mb-4'}>
+            <div className="grid sm:grid-cols-4 gap-2">
+              <input className={input + ' sm:col-span-2'} placeholder="Medicine name" value={medForm.name} onChange={e => setMedForm({ ...medForm, name: e.target.value })} />
+              <input className={input} placeholder="Dose (e.g. 5 mg)" value={medForm.dose} onChange={e => setMedForm({ ...medForm, dose: e.target.value })} />
+              <input type="time" className={input} value={medForm.time} onChange={e => setMedForm({ ...medForm, time: e.target.value })} />
+            </div>
+            <button className={btn + ' mt-3'} onClick={addMed}><Icon n="plus" c="w-4 h-4" />Add medication</button>
+          </div>
+          <div className={card + ' px-5'}><ul className="divide-y divide-cyan-200 dark:divide-slate-800">{meds.map(m => <MedRow key={m.id} m={m} />)}</ul></div>
+        </>)}
+
+        {tab === 'appts' && (<>
+          <Header title="Appointments" sub="Upcoming visits with your care team" />
+          <div className="grid sm:grid-cols-2 gap-4">
+            {appts.map(a => (
+              <div key={a.id} className={card + ' p-5 flex gap-4'}>
+                <div className="w-14 shrink-0 rounded-xl bg-brand-50 dark:bg-brand-700/20 text-brand-700 dark:text-brand-100 text-center py-2"><p className="text-xs uppercase">{new Date(a.date + 'T00:00').toLocaleDateString('en-IN', { month: 'short' })}</p><p className="text-xl font-bold">{new Date(a.date + 'T00:00').getDate()}</p></div>
+                <div className="min-w-0 flex-1"><p className="font-semibold">{a.doctor}</p><p className="text-sm text-slate-700">{a.spec} · {a.time}</p><p className="text-xs text-slate-700 flex items-center gap-1 mt-1"><Icon n="pin" c="w-3.5 h-3.5" />{a.place}</p></div>
+                <button aria-label="Cancel" className="text-slate-400 hover:text-rose-600 self-start" onClick={() => setAppts(appts.filter(x => x.id !== a.id))}><Icon n="trash" c="w-4 h-4" /></button>
+              </div>
+            ))}
+            {!appts.length && <p className="text-sm text-slate-700">No upcoming appointments.</p>}
+          </div>
+        </>)}
+
+        {tab === 'symptoms' && (<>
+          <Header title="Symptom log" sub="Record how you feel to share with your doctor" />
+          <div className={card + ' p-5 mb-4 space-y-3'}>
+            <input className={input} placeholder="Symptom (e.g. Dizziness)" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            <div><label className="text-xs text-slate-700">Severity: {form.severity}/5</label><input type="range" min={1} max={5} value={form.severity} onChange={e => setForm({ ...form, severity: +e.target.value })} className="w-full accent-cyan-600" /></div>
+            <input className={input} placeholder="Notes (optional)" value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
+            <button className={btn} onClick={addSym}><Icon n="plus" c="w-4 h-4" />Log symptom</button>
+          </div>
+          <div className="space-y-2">{syms.map(s => (
+            <div key={s.id} className={card + ' p-4 flex items-center gap-3'}>
+              <span className={'text-xs font-bold w-10 text-center py-1 rounded-lg ' + sev(s.severity)}>{s.severity}/5</span>
+              <div className="flex-1 min-w-0"><p className="font-semibold">{s.name}</p><p className="text-xs text-slate-700 truncate">{s.note || 'No notes'}</p></div>
+              <span className="text-xs text-slate-700">{fmt(s.date)}</span>
+            </div>))}</div>
+        </>)}
+
+        {tab === 'records' && (<>
+          <Header title="Health records" sub="Reports, scans and prescriptions in one place" />
+          <div className="space-y-2">{recs.map(r => (
+            <div key={r.id} className={card + ' p-4 flex items-center gap-3'}>
+              <div className="w-10 h-10 rounded-xl bg-sky-200 text-sky-800 grid place-items-center"><Icon n="file" /></div>
+              <div className="flex-1 min-w-0"><p className="font-semibold truncate">{r.title}</p><p className="text-xs text-slate-700">{r.type} · {fmt(r.date)}</p></div>
+              <span className="text-xs font-semibold text-brand-600">View</span>
+            </div>))}</div>
+        </>)}
+      </main>
+
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-t border-slate-200 dark:border-slate-800 grid grid-cols-5" style={{ paddingBottom: 'env(safe-area-inset-bottom,0px)' }}>
+        {NAV.map(n => (
+          <button key={n.id} onClick={() => setTab(n.id)} className={'flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium ' + (tab === n.id ? 'text-brand-600' : 'text-slate-700')}><Icon n={n.icon} />{n.label.split(' ')[0]}</button>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+type Role = 'patient' | 'doctor' | 'admin';
+const ROLES: Record<Role, { emoji: string; label: string; idLabel: string; ph: string; desc: string; btn: string }> = {
+  patient: { emoji: '👤', label: 'Patient', idLabel: 'Email / Patient ID', ph: 'you@example.com or PID-10234', desc: 'Track your personal health information.', btn: 'Patient login' },
+  doctor: { emoji: '👨‍⚕️', label: 'Doctor', idLabel: 'Doctor ID / Email', ph: 'DOC-2041 or doctor@clinic.com', desc: 'Manage and monitor your patients.', btn: 'Doctor login' },
+  admin: { emoji: '🛡️', label: 'Administrator', idLabel: 'Admin ID / Email', ph: 'ADM-001 or admin@medinexa.com', desc: 'Manage users and the whole system.', btn: 'Administrator login' },
+};
+interface Session { name: string; role: Role }
+
+function Login({ onAuth }: { onAuth: (s: Session) => void }) {
+  const [role, setRole] = useState<Role>('patient');
+  const [id, setId] = useState(() => { try { return localStorage.getItem('mx-id') || ''; } catch { return ''; } });
+  const [pw, setPw] = useState('');
+  const [remember, setRemember] = useState(() => { try { return !!localStorage.getItem('mx-id'); } catch { return false; } });
+  const [msg, setMsg] = useState<{ t: string; ok: boolean } | null>(null);
+  const R = ROLES[role];
+  const submit = () => {
+    if (id.trim().length < 3) return setMsg({ t: 'Enter your ' + R.idLabel + '.', ok: false });
+    if (pw.length < 6) return setMsg({ t: 'Password must be at least 6 characters.', ok: false });
+    try { remember ? localStorage.setItem('mx-id', id) : localStorage.removeItem('mx-id'); } catch {}
+    const base = id.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ').trim() || R.label;
+    const nm = base.charAt(0).toUpperCase() + base.slice(1);
+    onAuth({ role, name: role === 'doctor' ? 'Dr. ' + nm : role === 'admin' ? 'Admin ' + nm : nm });
+  };
+  const forgot = () => setMsg({ t: id.trim() ? 'Password reset instructions would be sent to ' + id + ' (prototype).' : 'Enter your ID or email first, then tap Forgot password.', ok: !!id.trim() });
+  return (
+    <div className="min-h-screen grid lg:grid-cols-5">
+      <div className="hidden lg:flex lg:col-span-2 flex-col justify-between bg-gradient-to-br from-brand-600 to-blue-700 text-white p-12">
+        <div className="flex items-center gap-2"><div className="w-10 h-10 rounded-xl bg-white/15 grid place-items-center"><Icon n="heart" /></div><span className="text-xl font-bold">Medinexa</span></div>
+        <div><h2 className="text-4xl font-bold leading-tight">Better health, better organised.</h2><p className="mt-4 text-white max-w-sm">Our aim is to bring every patient's medications, appointments, symptoms and records into one secure, simple place, so patients stay on track and doctors can make better-informed decisions.</p></div>
+        <p className="text-sm text-white flex items-center gap-2"><Icon n="shield" c="w-4 h-4" />Your data stays private.</p>
+      </div>
+      <div className="lg:col-span-3 flex items-center justify-center p-5 sm:p-8">
+        <div className="w-full max-w-lg">
+          <div className="lg:hidden flex items-center gap-2 mb-6"><div className="w-9 h-9 rounded-xl bg-brand-600 text-white grid place-items-center"><Icon n="heart" /></div><span className="text-lg font-bold">Medinexa</span></div>
+          <h1 className="text-2xl font-bold">Sign in to Medinexa</h1>
+          <p className="text-sm text-slate-700 mt-1 mb-5">Select the account you want to access.</p>
+          <div role="tablist" className="grid grid-cols-3 gap-2 mb-6">
+            {(Object.keys(ROLES) as Role[]).map(k => (
+              <button key={k} role="tab" aria-selected={role === k} onClick={() => { setRole(k); setMsg(null); }} className={'rounded-2xl border-2 p-3 text-center transition ' + (role === k ? 'border-brand-500 bg-brand-50 dark:bg-brand-700/20' : 'border-slate-300 hover:border-brand-500')}>
+                <div className="text-2xl">{ROLES[k].emoji}</div><div className="text-xs sm:text-sm font-semibold mt-1">{ROLES[k].label}</div>
+              </button>
+            ))}
+          </div>
+          <div className={card + ' p-5 space-y-4'}>
+            <p className="text-sm text-slate-700">{R.emoji} {R.desc}</p>
+            <div><label className="text-sm font-medium">{R.idLabel}</label><input className={input + ' mt-1'} placeholder={R.ph} value={id} onChange={e => { setMsg(null); setId(e.target.value); }} /></div>
+            <div><label className="text-sm font-medium">Password</label><input type="password" className={input + ' mt-1'} placeholder="••••••••" value={pw} onChange={e => { setMsg(null); setPw(e.target.value); }} onKeyDown={e => e.key === 'Enter' && submit()} /></div>
+            <div className="flex items-center justify-between text-sm">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} className="accent-cyan-600 w-4 h-4" />Remember me</label>
+              <button onClick={forgot} className="text-brand-700 font-bold">Forgot password?</button>
+            </div>
+            {msg && <p role="alert" className={'text-sm ' + (msg.ok ? 'text-emerald-700' : 'text-rose-700')}>{msg.t}</p>}
+            <button onClick={submit} className={btn + ' w-full justify-center'}>{R.btn}</button>
+          </div>
+          <p className="text-sm text-slate-700 text-center mt-5">Medinexa: simple, secure health tracking for patients, doctors and care teams.</p>
+          <p className="text-xs text-slate-400 text-center mt-2">Prototype: any ID/email and a 6+ character password works.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const Shell = ({ name, role, onLogout, children }: { name: string; role: Role; onLogout: () => void; children: React.ReactNode }) => (
+  <div className="min-h-screen">
+    <header className="bg-white dark:bg-slate-900 border-b-2 border-cyan-300 dark:border-slate-800">
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 h-16 flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl bg-brand-600 text-white grid place-items-center"><Icon n="heart" /></div>
+        <span className="font-bold flex-1">Medinexa <span className="ml-1 text-xs font-semibold bg-brand-100 text-brand-700 rounded-full px-2 py-0.5 align-middle">{ROLES[role].label}</span></span>
+        <span className="hidden sm:block text-sm text-slate-700">{name}</span>
+        <button aria-label="Sign out" onClick={onLogout} className="flex items-center gap-1 text-sm text-slate-700 hover:text-slate-800 dark:hover:text-white"><Icon n="out" c="w-4 h-4" /><span className="hidden sm:inline">Sign out</span></button>
+      </div>
+    </header>
+    <main className="max-w-5xl mx-auto px-4 sm:px-8 py-6">{children}</main>
+  </div>
+);
+const Stat = ({ l, v, i }: { l: string; v: string; i: string }) => (
+  <div className={card + ' p-4'}><div className="w-9 h-9 rounded-xl bg-brand-50 dark:bg-brand-700/20 text-brand-600 grid place-items-center mb-3"><Icon n={i} c="w-4 h-4" /></div><p className="text-2xl font-bold">{v}</p><p className="text-xs text-slate-700">{l}</p></div>
+);
+
+function DoctorApp({ name, onLogout }: { name: string; onLogout: () => void }) {
+  const [q, setQ] = useState('');
+  const pts = [
+    { n: 'Aarav Mehta', c: 'Type 2 diabetes', a: 92, v: '12 Sep', s: 'Stable' },
+    { n: 'Priya Nair', c: 'Hypertension', a: 71, v: '18 Sep', s: 'Review' },
+    { n: 'Rohan Kulkarni', c: 'Asthma', a: 85, v: '02 Sep', s: 'Stable' },
+    { n: 'Sneha Joshi', c: 'Thyroid disorder', a: 58, v: '25 Sep', s: 'Attention' },
+    { n: 'Imran Shaikh', c: 'Post-surgery recovery', a: 96, v: '21 Sep', s: 'Stable' },
+  ].filter(p => p.n.toLowerCase().includes(q.toLowerCase()));
+  const tone = (s: string) => (s === 'Stable' ? 'bg-emerald-600 text-white' : s === 'Review' ? 'bg-amber-400 text-slate-900' : 'bg-rose-600 text-white');
+  return (
+    <Shell name={name} role="doctor" onLogout={onLogout}>
+      <Header title={'Welcome, ' + name} sub="Monday, 28 September · Your practice at a glance" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <Stat l="Active patients" v="48" i="pulse" /><Stat l="Today's appointments" v="6" i="cal" /><Stat l="Need attention" v="3" i="heart" /><Stat l="Reports to review" v="9" i="file" />
+      </div>
+      <div className="grid lg:grid-cols-3 gap-4">
+        <section className={card + ' p-5 lg:col-span-2'}>
+          <div className="flex items-center justify-between gap-3 mb-3"><h2 className="font-semibold">My patients</h2><input className={input + ' max-w-[11rem]'} placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} /></div>
+          <ul className="divide-y divide-cyan-200 dark:divide-slate-800">{pts.map(p => (
+            <li key={p.n} className="py-3 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-brand-50 text-brand-700 grid place-items-center font-bold">{p.n[0]}</div>
+              <div className="flex-1 min-w-0"><p className="font-semibold truncate">{p.n}</p><p className="text-xs text-slate-700 truncate">{p.c} · Adherence {p.a}% · Last visit {p.v}</p></div>
+              <span className={'text-xs font-semibold px-2 py-0.5 rounded-full ' + tone(p.s)}>{p.s}</span>
+            </li>))}{!pts.length && <li className="py-6 text-sm text-slate-700">No patients found.</li>}</ul>
+        </section>
+        <section className={card + ' p-5'}><h2 className="font-semibold mb-3">Today's schedule</h2>
+          {[['09:00', 'Aarav Mehta', 'Follow-up'], ['10:30', 'Priya Nair', 'BP review'], ['12:00', 'Sneha Joshi', 'Lab results'], ['15:30', 'Rohan Kulkarni', 'Check-up']].map(([t, n, r]) => (
+            <div key={t} className="flex gap-3 py-2"><span className="text-sm font-semibold text-brand-600 tabular-nums w-12">{t}</span><div><p className="text-sm font-medium">{n}</p><p className="text-xs text-slate-700">{r}</p></div></div>))}
+        </section>
+      </div>
+    </Shell>
+  );
+}
+
+function AdminApp({ name, onLogout }: { name: string; onLogout: () => void }) {
+  const [users, setUsers] = useState([
+    { id: 1, n: 'Aarav Mehta', r: 'Patient', e: 'aarav@example.com', on: true },
+    { id: 2, n: 'Dr. Ananya Rao', r: 'Doctor', e: 'ananya@citycare.com', on: true },
+    { id: 3, n: 'Priya Nair', r: 'Patient', e: 'priya@example.com', on: true },
+    { id: 4, n: 'Dr. Vikram Shah', r: 'Doctor', e: 'vikram@sahyadri.com', on: false },
+    { id: 5, n: 'Sneha Joshi', r: 'Patient', e: 'sneha@example.com', on: true },
+  ]);
+  const flip = (id: number) => setUsers(users.map(u => (u.id === id ? { ...u, on: !u.on } : u)));
+  return (
+    <Shell name={name} role="admin" onLogout={onLogout}>
+      <Header title="System administration" sub="Manage users and monitor the platform" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+        <Stat l="Total users" v="1,284" i="pulse" /><Stat l="Doctors" v="62" i="heart" /><Stat l="Patients" v="1,219" i="pill" /><Stat l="System status" v="Healthy" i="shield" />
+      </div>
+      <section className={card + ' p-5'}>
+        <h2 className="font-semibold mb-3">User management</h2>
+        <div className="overflow-x-auto"><table className="w-full text-sm min-w-[520px]">
+          <thead><tr className="text-left text-xs text-slate-700"><th className="pb-2">Name</th><th className="pb-2">Role</th><th className="pb-2">Email</th><th className="pb-2 text-right">Access</th></tr></thead>
+          <tbody className="divide-y divide-cyan-200 dark:divide-slate-800">{users.map(u => (
+            <tr key={u.id}><td className="py-3 font-medium">{u.n}</td><td>{u.r}</td><td className="text-slate-700">{u.e}</td>
+              <td className="text-right"><button onClick={() => flip(u.id)} className={'text-xs font-semibold px-3 py-1 rounded-full ' + (u.on ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-800')}>{u.on ? 'Active' : 'Suspended'}</button></td></tr>))}</tbody>
+        </table></div>
+      </section>
+    </Shell>
+  );
+}
+
+function Root() {
+  const [s, setS] = useState<Session | null>(null);
+  if (!s) return <Login onAuth={setS} />;
+  const out = () => setS(null);
+  return s.role === 'doctor' ? <DoctorApp name={s.name} onLogout={out} /> : s.role === 'admin' ? <AdminApp name={s.name} onLogout={out} /> : <App name={s.name} onLogout={out} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(<Root />);
+</script>
+<script>
+try {
+  var out = Babel.transform(document.getElementById('src').textContent, { presets: [['typescript', { isTSX: true, allExtensions: true }], 'react'] }).code;
+  (0, eval)(out);
+} catch (e) {
+  document.getElementById('root').innerHTML = '<pre style="padding:16px;color:#b91c1c;white-space:pre-wrap">' + e + '</pre>';
+}
+</script>
+</body>
+</html>
